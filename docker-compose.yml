@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  mysqldb:
+    image: mysql:8.0
+    container_name: equity-ledger-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: equity_ledger
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ledger-net
+
+  app:
+    build: .
+    container_name: equity-ledger-app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: mysqldb
+      DB_PORT: 3306
+      DB_USERNAME: root
+      DB_PASSWORD: root
+    depends_on:
+      mysqldb:
+        condition: service_healthy
+    networks:
+      - ledger-net
+
+networks:
+  ledger-net:
+    driver: bridge

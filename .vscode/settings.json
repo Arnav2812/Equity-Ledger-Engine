@@ -1,0 +1,15 @@
+{
+    "cSpell.words": [
+        "equityledger",
+        "healthcheck",
+        "mysqladmin",
+        "mysqldb",
+        "proot",
+        "Sharma",
+        "springdoc",
+        "springframework",
+        "webmvc"
+    ],
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.compile.nullAnalysis.mode": "automatic"
+}
