@@ -1,85 +1,134 @@
-# 🚀 Equity Ledger Engine
+# 🚀 Equity Ledger Engine - Full-Stack Trading & Ledger Platform
 
-A high-throughput, fault-tolerant **Equity Ledger Engine** built with **Java 22, Spring Boot 3, and MySQL**, fully containerized via **Docker**. Designed to handle concurrent equity trade execution with **double-entry accounting**, **pessimistic row-level locking**, and **header-based idempotency guardrails**.
-
----
-
-## Key Features
-
-* **Double-Entry Accounting Core:** Every transaction atomically generates paired `DEBIT` and `CREDIT` entries linked by a unique transaction identifier, ensuring balance conservation across all accounts.
-* **Race-Condition Safety:** Leverages JPA pessimistic write locking (`SELECT ... FOR UPDATE`) at the database level to prevent double-spending and state corruption under concurrent trade executions.
-* **Header-Based Idempotency:** Custom filter pipeline intercepts and validates requests via `X-Idempotency-Key` headers to safely ignore duplicated network requests without side effects.
-* **Business Validation Guardrails:** Prevents execution on illegal account states (e.g., balance insufficiency or shorting without position holdings).
-* **Dockerized Architecture:** Micro-service setup powered by Docker Compose for rapid spin-up and seamless deployment.
+A high-throughput, fault-tolerant **Full-Stack Equity Ledger & Corporate Actions Platform** built with **Java 22, Spring Boot 3, React (Vite), and MySQL**, fully containerized via **Docker**. Designed to handle high-concurrency equity trade executions with **double-entry accounting**, **pessimistic row-level locking**, **Object-Oriented Strategy Patterns**, and **header-based idempotency guardrails**.
 
 ---
 
-## System Architecture & Data Flow
+## 🌟 Key Features
+
+* **Interactive Trading Dashboard:** Modern dark-themed React + Vite interface (`http://localhost:5174`) offering real-time portfolio tracking, account balance summaries, trade execution controls, and corporate action monitoring.
+* **Double-Entry Accounting Core:** Every transaction atomically generates paired `DEBIT` and `CREDIT` entries (e.g., balancing `ACC-MARKET-POOL` against `ACC-USER-101`), preserving zero-sum balance conservation across all system accounts.
+* **Race-Condition Safety:** Leverages JPA database pessimistic write locking (`SELECT ... FOR UPDATE`) at the MySQL engine layer to eliminate double-spending, state corruption, and race conditions under heavy parallel trade submissions.
+* **Object-Oriented Strategy Pattern:** Clean architectural abstraction for processing diverse transaction types and corporate actions (e.g., stock splits, dividend distributions, trade settlements).
+* **Header-Based Idempotency Guardrails:** Custom Spring filter pipeline intercepts and validates requests via `X-Idempotency-Key` headers to safely reject duplicate network transmissions without unintended side effects.
+* **Seamless API Gateway / Proxy:** Built-in Vite reverse proxy routing (`/api/*`) seamlessly bridges client requests to the Spring Boot REST backend operating on port 8080.
+
+---
+
+## 🏗️ System Architecture & Data Flow
 
 ```text
-+------------------+         +----------------------------+         +---------------------------+
-|   Client / API   | ------> | Idempotency Interceptor    | ------> | Ledger Controller         |
-|  Request (JSON)  |         | (X-Idempotency-Key Filter) |         | POST /api/ledger/trade    |
-+------------------+         +----------------------------+         +---------------------------+
-                                                                                  |
-                                                                                  v
-+------------------+         +----------------------------+         +---------------------------+
-|  MySQL Database  | <------ | JPA Repository             | <------ | Ledger Service            |
-| (DEBIT / CREDIT) |         | (Pessimistic Write Lock)   |         | (Double-Entry Validation) |
-+------------------+         +----------------------------+         +---------------------------+
++-----------------------------------------------------------------------------------+
+|                                  FRONTEND LAYER                                   |
+|                     React + Vite Dashboard (localhost:5174)                       |
+|       ├── Real-Time Portfolio Table & Dynamic Account Summaries                   |
+|       └── Trade Execution & Corporate Action Control Panels                       |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          | /api/ledger/* (Vite Reverse Proxy)
+                                          v
++-----------------------------------------------------------------------------------+
+|                                  BACKEND LAYER                                    |
+|                     Spring Boot REST Engine (localhost:8080)                      |
+|       ├── Idempotency Interceptor (X-Idempotency-Key Validation)                  |
+|       ├── Business Validation Engine (Holdings & Balance Safety Guardrails)       |
+|       └── Double-Entry Accounting Service (OOD Strategy Pattern for Actions)      |
++-----------------------------------------------------------------------------------+
+                                          |
+                                          | JPA (Pessimistic Write Lock: SELECT ... FOR UPDATE)
+                                          v
++-----------------------------------------------------------------------------------+
+|                                 DATABASE LAYER                                    |
+|                      MySQL 8.0 (Containerized Docker Service)                     |
+|       └── Immutable Ledger Entries Table (DEBIT / CREDIT Atomic Pairs)            |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-| Component | Technology |
+| Domain | Technology |
 | :--- | :--- |
-| **Language** | Java 22 |
-| **Framework** | Spring Boot 3.x, Spring Data JPA |
+| **Frontend** | React 18, Vite, JavaScript (ES6+), CSS3 (Modern Dark Theme) |
+| **Backend** | Java 22, Spring Boot 3.x, Spring Data JPA, Hibernate |
 | **Database** | MySQL 8.0 |
-| **Containerization** | Docker, Docker Compose |
-| **Build Tool** | Maven |
+| **Architecture / Patterns** | Double-Entry Bookkeeping, OOD Strategy Pattern, Idempotency Interceptor, Reverse Proxy Gateway |
+| **Containerization & Tools** | Docker, Docker Compose, Maven, Node.js / npm |
 
 ---
 
-## API Endpoints
+## ⚡ API Endpoints
 
 ### 1. Execute Equity Trade
 `POST /api/ledger/trade`
 
 **Headers:**
 * `Content-Type: application/json`
-* `X-Idempotency-Key: <UNIQUE_UUID_KEY>`
+* `X-Idempotency-Key: IDEM-<TIMESTAMP_UUID>`
 
-**Request Body:**
+**Request Payload:**
 ```json
 {
-  "sourceAccount": "MARKET_MAKER",
-  "targetAccount": "ACC_101",
+  "sourceAccount": "ACC-MARKET-POOL",
+  "targetAccount": "ACC-USER-101",
   "symbol": "RELIANCE",
-  "amount": 100.00
+  "amount": 10
 }
 ```
 
-**Response (200 OK):**
+**Response (`200 OK`):**
 ```json
-{
-  "transactionId": "tx-8f4b2a10-9c2b-4d3e-91a5-e214828a2110",
-  "status": "SUCCESS",
-  "timestamp": "2026-07-25T14:00:00Z"
-}
+[
+  {
+    "id": "c0a80101-90ee-1e2b-8190-ee6f2a330001",
+    "accountId": "ACC-MARKET-POOL",
+    "symbol": "RELIANCE",
+    "entryType": "DEBIT",
+    "amount": 10,
+    "transactionId": "tx-99f2b1a0-4c2d-11ee-be56-0242ac120002"
+  },
+  {
+    "id": "c0a80101-90ee-1e2b-8190-ee6f2a340002",
+    "accountId": "ACC-USER-101",
+    "symbol": "RELIANCE",
+    "entryType": "CREDIT",
+    "amount": 10,
+    "transactionId": "tx-99f2b1a0-4c2d-11ee-be56-0242ac120002"
+  }
+]
 ```
 
 ---
 
-### 2. Fetch Account Ledger Summary
+### 2. Fetch Live Account Holdings
+`GET /api/ledger/portfolio/{accountId}`
+
+**Response (`200 OK`):**
+```json
+[
+  {
+    "symbol": "RELIANCE",
+    "quantity": 160,
+    "averageCost": 2550.50
+  },
+  {
+    "symbol": "INFY",
+    "quantity": 200,
+    "averageCost": 1485.20
+  }
+]
+```
+
+---
+
+### 3. Fetch Account Ledger Summary
 `GET /api/ledger/account/{accountId}`
 
-**Response (200 OK):**
+**Response (`200 OK`):**
 ```json
 {
-  "accountId": "ACC_101",
+  "accountId": "ACC-USER-101",
   "totalCredits": 200.00,
   "totalDebits": 0.00,
   "netBalance": 200.00
@@ -88,11 +137,11 @@ A high-throughput, fault-tolerant **Equity Ledger Engine** built with **Java 22,
 
 ---
 
-## Concurrency & Stress Testing Benchmark
+## 🧪 Concurrency & Stress Testing Benchmark
 
-To verify thread-safety under heavy parallel load, the engine was stress-tested against **20 parallel workers** firing simultaneous execution requests against the exact same source account.
+To verify thread safety and lock stability under heavy parallel trade submissions, the backend engine was benchmarked against **20 concurrent execution threads** firing transactions against a single market account state.
 
-### Verification Run:
+### Stress Verification Script:
 ```powershell
 1..20 | ForEach-Object {
     Start-Job -ScriptBlock {
@@ -104,24 +153,27 @@ To verify thread-safety under heavy parallel load, the engine was stress-tested 
             "Content-Type" = "application/json"
             "X-Idempotency-Key" = $key
           } `
-          -Body '{"sourceAccount":"MARKET_MAKER","targetAccount":"ACC_101","symbol":"RELIANCE","amount":10.00}'
+          -Body '{"sourceAccount":"ACC-MARKET-POOL","targetAccount":"ACC-USER-101","symbol":"RELIANCE","amount":10}'
     } -ArgumentList $_
 } | Out-Null; Get-Job | Receive-Job -Wait -AutoRemoveJob
 ```
 
 ### Benchmark Results:
-* **Processed Requests:** 20 Parallel Executions
-* **Deadlocks / Lock Timeouts:** 0
-* **Duplicate Executions:** 0
-* **Ledger Balance Consistency:** 100% (20 x 10.00 = 200.00 credits cleanly verified).
+* **Executed Threads:** 20 Parallel Submissions
+* **Deadlocks / Row-Lock Failures:** 0
+* **Duplicate Executions:** 0 (Filtered via Idempotency Interceptor)
+* **Ledger Balance Integrity:** 100% verified zero-sum math and financial conservation.
 
 ---
 
-## Quickstart Guide
+## 🚀 Quickstart Guide
 
 ### Prerequisites
-* Docker Desktop installed and running
-* Git
+* **Docker Desktop** installed and running
+* **Node.js** (v18+ recommended)
+* **Git**
+
+---
 
 ### 1. Clone the Repository
 ```bash
@@ -129,13 +181,21 @@ git clone https://github.com/your-username/equity-ledger-engine.git
 cd equity-ledger-engine
 ```
 
-### 2. Build & Launch Containers
+---
+
+### 2. Start Backend & Database Services
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
+```
+*Spins up Spring Boot on port `8080` and MySQL 8.0 on port `3306`.*
+
+---
+
+### 3. Start Frontend Dashboard
+```bash
+cd equity-ledger-ui
+npm install
+npm run dev
 ```
 
-### 3. Verify System Health
-```bash
-docker ps
-```
-Both `equity-ledger-app` and `equity-ledger-db` should report `running` / `healthy` status.
+Open your browser at **`http://localhost:5174`** to launch the interactive trading dashboard!
