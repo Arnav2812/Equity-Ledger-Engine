@@ -1,230 +1,333 @@
 import React, { useState, useEffect } from 'react';
+import {
+  login,
+  tokenStore,
+  fetchPortfolio,
+  fetchAccountHistory,
+  recordTrade,
+  executeCorporateAction
+} from './api/ledgerApi';
 import './App.css';
 
-// Inline API client with local fallbacks so it never crashes
-const API_BASE_URL = 'http://localhost:8080/api/ledger';
-
-const MARKET_PRICES = {
-  RELIANCE: { name: 'Reliance Industries', sector: 'Energy', currentPrice: 2550.50 },
-  INFY: { name: 'Infosys Ltd.', sector: 'Technology', currentPrice: 1485.20 },
-  TATAPWR: { name: 'Tata Power Co.', sector: 'Power', currentPrice: 412.75 },
-  IRB: { name: 'IRB Infrastructure', sector: 'Infrastructure', currentPrice: 64.20 }
-};
-
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(tokenStore.getUser());
+  const [currentRole, setCurrentRole] = useState(null);
+  const [accountId, setAccountId] = useState('ACC-USER-101');
   const [portfolio, setPortfolio] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [alert, setAlert] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // Trade Form State
-  const [ticker, setTicker] = useState('RELIANCE');
-  const [quantity, setQuantity] = useState(10);
+  // Trade form state
+  const [tradeSymbol, setTradeSymbol] = useState('RELIANCE');
+  const [tradeAmount, setTradeAmount] = useState(10);
   const [tradeType, setTradeType] = useState('BUY');
 
-  // Stock Split Form State
-  const [splitTicker, setSplitTicker] = useState('RELIANCE');
-  const [splitRatio, setSplitRatio] = useState(2);
+  // Corporate Action form state
+  const [caType, setCaType] = useState('STOCK_SPLIT');
+  const [caSymbol, setCaSymbol] = useState('RELIANCE');
+  const [caRatio, setCaRatio] = useState(2);
 
-  const totalValue = portfolio.reduce((acc, item) => acc + item.quantity * item.currentPrice, 0);
-  const totalInvestment = portfolio.reduce((acc, item) => acc + item.quantity * item.avgPrice, 0);
-  const totalPL = totalValue - totalInvestment;
-
-  // 1. Function to fetch live portfolio from Spring Boot backend
-  const fetchPortfolio = async () => {
+  // Parse current role from token payload
+  const updateRoleFromToken = () => {
+    const token = tokenStore.getAccessToken();
+    if (!token) {
+      setCurrentRole(null);
+      return;
+    }
     try {
-      const res = await fetch('/api/ledger/portfolio/ACC-USER-101');
-      if (res.ok) {
-        const holdings = await res.json();
-        
-        // Enrich backend holdings with live market prices for P&L calculations
-        const enrichedPortfolio = holdings.map((item) => {
-          const meta = MARKET_PRICES[item.symbol] || { 
-            name: item.symbol, 
-            sector: 'General', 
-            currentPrice: Number(item.averageCost) || 100 
-          };
-          return {
-            ...item,
-            name: meta.name,
-            sector: meta.sector,
-            currentPrice: meta.currentPrice,
-            avgPrice: Number(item.averageCost),
-            quantity: Number(item.quantity)
-          };
-        });
-
-        setPortfolio(enrichedPortfolio);
-      }
-    } catch (err) {
-      console.error('Failed to fetch portfolio:', err);
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setCurrentRole(payload.role || 'UNKNOWN');
+    } catch {
+      setCurrentRole(null);
     }
   };
 
-  // 2. Fetch live holdings when page first loads
   useEffect(() => {
-    fetchPortfolio();
-  }, []);
+    updateRoleFromToken();
+  }, [currentUser]);
 
-  // 3. Trade Submit Handler
+  const showAlert = (message, type = 'info', status = null) => {
+    setAlert({ message, type, status });
+    setTimeout(() => setAlert(null), 6000);
+  };
+
+  // Preset role authentication
+  const switchRole = async (username, password) => {
+    setLoading(true);
+    try {
+      await login(username, password);
+      setCurrentUser(tokenStore.getUser());
+      updateRoleFromToken();
+      showAlert(`Authenticated as ${username.toUpperCase()}`, 'success');
+      loadDashboardData();
+    } catch (err) {
+      showAlert(err.message, 'error', err.status);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    tokenStore.clear();
+    setCurrentUser(null);
+    setCurrentRole(null);
+    showAlert('Session cleared (Unauthenticated state)', 'warning');
+  };
+
+  const loadDashboardData = async () => {
+    try {
+      const [holdings, entries] = await Promise.all([
+        fetchPortfolio(accountId),
+        fetchAccountHistory(accountId),
+      ]);
+      setPortfolio(holdings);
+      setHistory(entries);
+    } catch (err) {
+      if (err.status === 401) {
+        showAlert('401 Unauthorized: Valid JWT access token required.', 'error', 401);
+      } else if (err.status === 403) {
+        showAlert('403 Forbidden: Insufficient role permissions.', 'error', 403);
+      } else {
+        showAlert(err.message, 'error', err.status);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (tokenStore.getAccessToken()) {
+      loadDashboardData();
+    }
+  }, [accountId]);
+
   const handleTradeSubmit = async (e) => {
     e.preventDefault();
-
     const isBuy = tradeType === 'BUY';
     const payload = {
-      sourceAccount: isBuy ? 'ACC-MARKET-POOL' : 'ACC-USER-101',
-      targetAccount: isBuy ? 'ACC-USER-101' : 'ACC-MARKET-POOL',
-      symbol: ticker.split(' ')[0],
-      amount: Number(quantity)
+      sourceAccount: isBuy ? 'ACC-MARKET-POOL' : accountId,
+      targetAccount: isBuy ? accountId : 'ACC-MARKET-POOL',
+      symbol: tradeSymbol,
+      amount: Number(tradeAmount),
+    };
+    const idempotencyKey = `UI-TX-${Date.now()}`;
+
+    try {
+      await recordTrade(payload, idempotencyKey);
+      showAlert(`200 OK: Trade executed successfully (${tradeType} ${tradeAmount} ${tradeSymbol})`, 'success', 200);
+      loadDashboardData();
+    } catch (err) {
+      showAlert(
+        `${err.status ? `${err.status} ` : ''}${err.status === 403 ? 'Forbidden: ' : ''}${err.message}`,
+        'error',
+        err.status
+      );
+    }
+  };
+
+  const handleCorporateActionSubmit = async (e) => {
+    e.preventDefault();
+    const payload = {
+      type: caType,
+      symbol: caSymbol,
+      ratio: Number(caRatio),
+      targetAccount: accountId,
     };
 
     try {
-      const res = await fetch('/api/ledger/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': `IDEM-${Date.now()}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        alert('Trade executed successfully!');
-        // 👈 Refetch portfolio from MySQL to update UI instantly!
-        await fetchPortfolio();
-      } else {
-        const errText = await res.text();
-        alert(`Backend Error (${res.status}): ${errText}`);
-      }
+      const res = await executeCorporateAction(payload);
+      showAlert(`200 OK: ${res}`, 'success', 200);
+      loadDashboardData();
     } catch (err) {
-      console.error('Fetch Error:', err);
-      alert(`Network Error: ${err.message}`);
+      showAlert(
+        `${err.status ? `${err.status} ` : ''}${err.status === 403 ? 'Forbidden: ' : ''}${err.message}`,
+        'error',
+        err.status
+      );
     }
   };
 
-  const handleSplitSubmit = async (e) => {
-    e.preventDefault();
-    alert(`Corporate Action Triggered: ${splitRatio}:1 Split for${splitTicker}!`);
-  };
-
   return (
-    <div className="dashboard-container">
-      {/* Header */}
-      <header className="header">
-        <div>
-          <h1>Equity Ledger & Real-Time Portfolio Platform</h1>
-          <p style={{ color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Java Spring Boot + Aerospike NoSQL Cache + MySQL ACID Ledger
-          </p>
+    <div className="app-container">
+      {/* Top IAM Control Bar */}
+      <header className="iam-header">
+        <div className="brand">
+          <h2>⚡ Equity Ledger Engine</h2>
+          <span className="subtitle">High-Throughput ACID Trading & IAM Platform</span>
         </div>
-        <div>
-          <span className="badge">✓ System Active</span>
+
+        <div className="iam-controls">
+          <div className="user-badge">
+            <span className="dot" style={{ backgroundColor: currentRole ? '#10b981' : '#ef4444' }}></span>
+            <span>Role: <strong>{currentRole || 'UNAUTHENTICATED'}</strong></span>
+          </div>
+
+          <div className="quick-switch">
+            <button className="btn-role" onClick={() => switchRole('admin', 'admin123')}>Admin</button>
+            <button className="btn-role" onClick={() => switchRole('operator', 'op123')}>Operator</button>
+            <button className="btn-role" onClick={() => switchRole('viewer', 'view123')}>Viewer</button>
+            <button className="btn-logout" onClick={handleLogout}>Clear Auth</button>
+          </div>
         </div>
       </header>
 
-      {/* Metrics Cards */}
-      <div className="grid-3">
-        <div className="card">
-          <div className="card-title">Total Portfolio Value (Aerospike Cache)</div>
-          <div className="card-value">₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+      {/* Global Status Banner */}
+      {alert && (
+        <div className={`status-banner banner-${alert.type}`}>
+          <span className="status-code">{alert.status ? `[HTTP ${alert.status}]` : 'ℹ️'}</span>
+          <span>{alert.message}</span>
         </div>
-        <div className="card">
-          <div className="card-title">Total Profit / Loss</div>
-          <div className={`card-value ${totalPL >= 0 ? 'text-green' : 'text-red'}`}>
-            {totalPL >= 0 ? '+' : ''}₹{totalPL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+      )}
+
+      <main className="dashboard-grid">
+        {/* Left Column: Actions */}
+        <section className="controls-column">
+          {/* Trade Execution Panel */}
+          <div className="card">
+            <h3>📈 Order Execution (ADMIN / OPERATOR)</h3>
+            <form onSubmit={handleTradeSubmit}>
+              <div className="form-group">
+                <label>Action</label>
+                <select value={tradeType} onChange={(e) => setTradeType(e.target.value)}>
+                  <option value="BUY">BUY (Market Pool → User)</option>
+                  <option value="SELL">SELL (User → Market Pool)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Symbol</label>
+                <input
+                  type="text"
+                  value={tradeSymbol}
+                  onChange={(e) => setTradeSymbol(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Shares</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={tradeAmount}
+                  onChange={(e) => setTradeAmount(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn-submit" disabled={loading}>
+                Execute Trade
+              </button>
+            </form>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">Active Asset Holdings</div>
-          <div className="card-value">{portfolio.length} Sectors</div>
-        </div>
-      </div>
 
-      {/* Holdings Table */}
-      <section className="card" style={{ marginBottom: '2rem' }}>
-        <h3 style={{ marginTop: 0 }}>Active User Holdings (Cached State)</h3>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Asset Name</th>
-                <th>Sector</th>
-                <th>Quantity</th>
-                <th>Avg Cost</th>
-                <th>Live Price</th>
-                <th>Market Value</th>
-                <th>P&L</th>
-              </tr>
-            </thead>
-            <tbody>
-              {portfolio.map((item) => {
-                const itemValue = item.quantity * item.currentPrice;
-                const itemPL = itemValue - (item.quantity * item.avgPrice);
-                return (
-                  <tr key={item.ticker}>
-                    <td><strong>{item.ticker}</strong></td>
-                    <td>{item.name}</td>
-                    <td><span className="badge">{item.sector}</span></td>
-                    <td>{item.quantity}</td>
-                    <td>₹{item.avgPrice.toFixed(2)}</td>
-                    <td>₹{item.currentPrice.toFixed(2)}</td>
-                    <td>₹{itemValue.toLocaleString('en-IN')}</td>
-                    <td className={itemPL >= 0 ? 'text-green' : 'text-red'}>
-                      {itemPL >= 0 ? '+' : ''}₹{itemPL.toFixed(2)}
-                    </td>
+          {/* Corporate Actions Panel */}
+          <div className="card">
+            <h3>🏛️ Corporate Actions (ADMIN Only)</h3>
+            <form onSubmit={handleCorporateActionSubmit}>
+              <div className="form-group">
+                <label>Action Type</label>
+                <select value={caType} onChange={(e) => setCaType(e.target.value)}>
+                  <option value="STOCK_SPLIT">Stock Split</option>
+                  <option value="BONUS_ISSUE">Bonus Issue</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Symbol</label>
+                <input
+                  type="text"
+                  value={caSymbol}
+                  onChange={(e) => setCaSymbol(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Ratio / Multiplier</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={caRatio}
+                  onChange={(e) => setCaRatio(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn-submit btn-corp" disabled={loading}>
+                Apply Action
+              </button>
+            </form>
+          </div>
+        </section>
+
+        {/* Right Column: Holdings & Audit Trail */}
+        <section className="data-column">
+          <div className="card">
+            <div className="card-header">
+              <h3>💼 Real-Time Portfolio ({accountId})</h3>
+              <button className="btn-refresh" onClick={loadDashboardData}>Refresh</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Total Shares</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolio.length === 0 ? (
+                  <tr>
+                    <td colSpan="2" className="empty-text">No positions held or unauthenticated.</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                ) : (
+                  portfolio.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="symbol-cell">{item.symbol}</td>
+                      <td className="qty-cell">{item.quantity}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-      {/* Interactive Forms */}
-      <div className="grid-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <div className="card">
-          <h3>📈 Simulate Live Trade Execution</h3>
-          <p className="card-title">Sends transactional write to MySQL Ledger via REST API.</p>
-          <form onSubmit={handleTradeSubmit} className="action-form">
-            <select value={ticker} onChange={(e) => setTicker(e.target.value)}>
-              <option value="RELIANCE">RELIANCE (Energy)</option>
-              <option value="INFY">INFY (Tech)</option>
-              <option value="TATAPWR">TATAPWR (Power)</option>
-              <option value="IRB">IRB (Infrastructure)</option>
-            </select>
-            <select value={tradeType} onChange={(e) => setTradeType(e.target.value)}>
-              <option value="BUY">BUY</option>
-              <option value="SELL">SELL</option>
-            </select>
-            <input 
-              type="number" 
-              placeholder="Quantity" 
-              value={quantity} 
-              onChange={(e) => setQuantity(e.target.value)} 
-              min="1" 
-              required 
-            />
-            <button type="submit" className="btn-primary">Execute Trade</button>
-          </form>
-        </div>
-
-        <div className="card">
-          <h3>⚡ Trigger Corporate Action</h3>
-          <p className="card-title">Executes stock split logic using OOD Strategy Pattern.</p>
-          <form onSubmit={handleSplitSubmit} className="action-form">
-            <select value={splitTicker} onChange={(e) => setSplitTicker(e.target.value)}>
-              <option value="RELIANCE">RELIANCE</option>
-              <option value="INFY">INFY</option>
-              <option value="TATAPWR">TATAPWR</option>
-            </select>
-            <select value={splitRatio} onChange={(e) => setSplitRatio(e.target.value)}>
-              <option value={2}>2:1 Stock Split</option>
-              <option value={5}>5:1 Stock Split</option>
-            </select>
-            <button type="submit" className="btn-primary" style={{ backgroundColor: '#8b5cf6' }}>
-              Apply Split
-            </button>
-          </form>
-        </div>
-      </div>
+          <div className="card">
+            <h3>📜 Double-Entry Audit Trail</h3>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Symbol</th>
+                    <th>Amount</th>
+                    <th>Tx ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="empty-text">No audit history recorded.</td>
+                    </tr>
+                  ) : (
+                    history.map((entry, idx) => (
+                      <tr key={idx}>
+                        <td>
+                          <span className={`badge ${entry.entryType === 'CREDIT' ? 'badge-credit' : 'badge-debit'}`}>
+                            {entry.entryType}
+                          </span>
+                        </td>
+                        <td>{entry.symbol}</td>
+                        <td>{entry.amount}</td>
+                        <td className="mono-cell">{entry.transactionId ? entry.transactionId.substring(0, 16) : '-'}...</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
