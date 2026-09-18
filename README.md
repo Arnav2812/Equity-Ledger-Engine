@@ -1,20 +1,20 @@
-```markdown
+
 # 🚀 Equity Ledger Engine - Full-Stack Trading, Ledger & IAM Platform
 
-A high-throughput, fault-tolerant **Full-Stack Equity Ledger, Corporate Actions & IAM Platform** built with **Java 22, Spring Boot 3, React (Vite), and MySQL**, fully containerized via **Docker**[cite: 1]. Designed to handle high-concurrency equity trade executions with **double-entry accounting**, **pessimistic row-level locking**, **Object-Oriented Strategy Patterns**, **header-based idempotency guardrails**, and **stateless JWT-based Role-Based Access Control (RBAC)**[cite: 1].
+A high-throughput, fault-tolerant **Full-Stack Equity Ledger, Corporate Actions & IAM Platform** built with **Java 22, Spring Boot 3, React (Vite), and MySQL**, fully containerized via **Docker**. Designed to handle high-concurrency equity trade executions with **double-entry accounting**, **pessimistic row-level locking**, **Object-Oriented Strategy Patterns**, **header-based idempotency guardrails**, and **stateless JWT-based Role-Based Access Control (RBAC)**.
 
 ---
 
 ## 🌟 Key Features
 
-* **Interactive Trading Dashboard:** Modern dark-themed React + Vite interface (`http://localhost:5174`) offering real-time portfolio tracking, account balance summaries, trade execution controls, corporate action triggers, and an IAM role-switching toolbar (`ADMIN`, `OPERATOR`, `VIEWER`, unauthenticated)[cite: 1].
+* **Interactive Trading Dashboard:** Modern dark-themed React + Vite interface (`http://localhost:5174`) offering real-time portfolio tracking, account balance summaries, trade execution controls, corporate action triggers, and an IAM role-switching toolbar (`ADMIN`, `OPERATOR`, `VIEWER`, unauthenticated).
 * **Stateless JWT & Role-Based Access Control (IAM):** Built-in Spring Security 6 filter chain enforcing least-privilege RBAC using short-lived HMAC-SHA256 access tokens (15-min expiry) and secure refresh tokens (7-day expiry).
 * **Granular HTTP Error Separation:** Dedicated `JwtAuthEntryPoint` and `CustomAccessDeniedHandler` enforcing an explicit separation between unauthenticated requests (`401 Unauthorized`) and insufficient role permissions (`403 Forbidden`).
-* **Double-Entry Accounting Core:** Every transaction atomically generates paired `DEBIT` and `CREDIT` entries (balancing `ACC-MARKET-POOL` against user accounts), preserving zero-sum balance conservation across all system accounts[cite: 1].
-* **Race-Condition Safety:** Leverages JPA database pessimistic write locking (`SELECT ... FOR UPDATE`) at the MySQL engine layer to eliminate double-spending, state corruption, and race conditions under heavy parallel trade submissions[cite: 1].
-* **Object-Oriented Strategy Pattern:** Clean architectural abstraction for processing diverse transaction types and corporate actions (e.g., stock splits, bonus issues, dividend distributions)[cite: 1].
-* **Header-Based Idempotency Guardrails:** Custom Spring filter pipeline intercepts and validates requests via `X-Idempotency-Key` headers to safely reject duplicate network transmissions without unintended side effects[cite: 1].
-* **Seamless API Gateway / Proxy:** Built-in Vite reverse proxy routing (`/api/*`) seamlessly bridges client requests to the Spring Boot REST backend operating on port 8080[cite: 1].
+* **Double-Entry Accounting Core:** Every transaction atomically generates paired `DEBIT` and `CREDIT` entries (balancing `ACC-MARKET-POOL` against user accounts), preserving zero-sum balance conservation across all system accounts.
+* **Race-Condition Safety:** Leverages JPA database pessimistic write locking (`SELECT ... FOR UPDATE`) at the MySQL engine layer to eliminate double-spending, state corruption, and race conditions under heavy parallel trade submissions.
+* **Object-Oriented Strategy Pattern:** Clean architectural abstraction for processing diverse transaction types and corporate actions (e.g., stock splits, bonus issues, dividend distributions).
+* **Header-Based Idempotency Guardrails:** Custom Spring filter pipeline intercepts and validates requests via `X-Idempotency-Key` headers to safely reject duplicate network transmissions without unintended side effects.
+* **Seamless API Gateway / Proxy:** Built-in Vite reverse proxy routing (`/api/*`) seamlessly bridges client requests to the Spring Boot REST backend operating on port 8080.
 
 ---
 
@@ -57,7 +57,6 @@ A high-throughput, fault-tolerant **Full-Stack Equity Ledger, Corporate Actions 
 |       ├── Users Table (BCrypt Encrypted Credentials, System Roles)                |
 |       └── Immutable Ledger Entries Table (DEBIT / CREDIT Atomic Pairs)            |
 +-----------------------------------------------------------------------------------+
-
 ```
 
 ---
@@ -67,36 +66,19 @@ A high-throughput, fault-tolerant **Full-Stack Equity Ledger, Corporate Actions 
 | Domain | Technology |
 | --- | --- |
 | **Frontend** | React 18, Vite, JavaScript (ES6+), CSS3 (Modern Dark Theme)
-
- |
 | **Backend** | Java 22, Spring Boot 3.x, Spring Data JPA, Hibernate
-
- |
 | **Security & IAM** | Spring Security 6, JJWT (io.jsonwebtoken 0.12.3), BCrypt Password Hashing, RBAC |
 | **Database** | MySQL 8.0
-
- |
 | **Architecture / Patterns** | Double-Entry Bookkeeping, OOD Strategy Pattern, Idempotency Guardrails, Filter Chain RBAC, Reverse Proxy
-
- |
 | **Containerization & Tools** | Docker, Docker Compose, Maven, Node.js / npm
-
- |
-
 ---
 
 ## 👥 Role & Permissions Matrix
 
 | Role | Permissions | Endpoints Allowed |
 | --- | --- | --- |
-| **ADMIN** | Full system administration, trade execution, corporate action issuance, view-all. | `POST /api/ledger/trade`<br>
-
-<br>`POST /api/ledger/corporate-action`<br>
-
-<br>`GET /api/ledger/**` |
-| **OPERATOR** | Active order execution and ledger reading. Blocked from restructuring capital. | `POST /api/ledger/trade`<br>
-
-<br>`GET /api/ledger/**` |
+| **ADMIN** | Full system administration, trade execution, corporate action issuance, view-all. | `POST /api/ledger/trade`<br><br>`POST /api/ledger/corporate-action`<br><br>`GET /api/ledger/**` |
+| **OPERATOR** | Active order execution and ledger reading. Blocked from restructuring capital. | `POST /api/ledger/trade`<br><br>`GET /api/ledger/**` |
 | **VIEWER** | Read-only access to audit logs and portfolio balances. Blocked from writing. | `GET /api/ledger/**` |
 
 ---
